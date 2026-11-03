@@ -7,6 +7,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.database import db
 from api.indexes import create_indexes
+from api.v1.middlewares.logging import LoggingMiddleware
 from api.v1.middlewares.errors import (
     general_exception_handler,
     http_exception_handler,
@@ -27,6 +28,7 @@ from api.v1.middlewares.errors import (
     validation_exception_handler,
 )
 from api.v1.routes import v1_router
+from api.v1.services.categories import seed_categories
 from api.v1.utils.config import config
 from api.v1.utils.logger import setup_logger
 from pymongo.errors import (
@@ -55,6 +57,7 @@ setup_logger()
 async def lifespan(app: FastAPI):
     await db.connect()
     await create_indexes(db.get_db())
+    await seed_categories(db.get_db())
     yield
     await db.disconnect()
 
@@ -70,11 +73,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5500", "http://127.0.0.0.1:5500"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(LoggingMiddleware)
 
 # Exception handlers
 

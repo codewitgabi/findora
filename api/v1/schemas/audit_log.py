@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -11,4 +12,5 @@ class AuditLogOut(BaseModel):
     action: str
     target_type: AuditTargetType
     target_id: str
+    details: Optional[str] = None
     created_at: datetime

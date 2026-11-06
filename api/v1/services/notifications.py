@@ -17,13 +17,22 @@ async def create_notification(
     type: NotificationType,
     title: str,
     message: str,
+    item_id: str | ObjectId | None = None,
+    claim_id: str | ObjectId | None = None,
 ) -> None:
+    """Store an in-app notification.
+
+    ``item_id`` / ``claim_id`` let the client link the notification to the page it is
+    about (the item detail or the claim thread).
+    """
     await db[COLLECTION_NAME].insert_one(
         {
             "user_id": ObjectId(user_id),
             "type": type.value,
             "title": title,
             "message": message,
+            "item_id": ObjectId(item_id) if item_id else None,
+            "claim_id": ObjectId(claim_id) if claim_id else None,
             "is_read": False,
             "created_at": datetime.now(timezone.utc),
         }

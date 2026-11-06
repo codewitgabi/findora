@@ -1,3 +1,5 @@
+import asyncio
+
 import uvicorn
 from contextlib import asynccontextmanager
 
@@ -29,6 +31,7 @@ from api.v1.middlewares.errors import (
 )
 from api.v1.routes import v1_router
 from api.v1.services.categories import seed_categories
+from api.v1.services.retention import run_retention_loop
 from api.v1.utils.config import config
 from api.v1.utils.logger import setup_logger
 from pymongo.errors import (
@@ -58,7 +61,9 @@ async def lifespan(app: FastAPI):
     await db.connect()
     await create_indexes(db.get_db())
     await seed_categories(db.get_db())
+    retention = asyncio.create_task(run_retention_loop(db.get_db()))
     yield
+    retention.cancel()
     await db.disconnect()
 
 

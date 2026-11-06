@@ -2,8 +2,10 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
 
 from api.v1.models.audit_log import COLLECTION_NAME as AUDIT_LOGS_COLLECTION
+from api.v1.models.auth import AUTH_ATTEMPTS_COLLECTION, PASSWORD_RESETS_COLLECTION
 from api.v1.models.category import COLLECTION_NAME as CATEGORIES_COLLECTION
 from api.v1.models.claim import COLLECTION_NAME as CLAIMS_COLLECTION
+from api.v1.models.claim import MESSAGES_COLLECTION_NAME as CLAIM_MESSAGES_COLLECTION
 from api.v1.models.item import COLLECTION_NAME as ITEMS_COLLECTION
 from api.v1.models.item import IMAGES_COLLECTION_NAME as ITEM_IMAGES_COLLECTION
 from api.v1.models.notification import COLLECTION_NAME as NOTIFICATIONS_COLLECTION
@@ -19,6 +21,23 @@ async def create_indexes(database: AsyncIOMotorDatabase) -> None:
     """
 
     await database[USERS_COLLECTION].create_index([("email", ASCENDING)], unique=True)
+    await database[USERS_COLLECTION].create_index(
+        [("student_id", ASCENDING)],
+        unique=True,
+        partialFilterExpression={"student_id": {"$type": "string"}},
+    )
+
+    # Expire rate-limit attempts and reset links automatically.
+    await database[AUTH_ATTEMPTS_COLLECTION].create_index(
+        [("kind", ASCENDING), ("email", ASCENDING), ("created_at", DESCENDING)]
+    )
+    await database[AUTH_ATTEMPTS_COLLECTION].create_index(
+        [("created_at", ASCENDING)], expireAfterSeconds=24 * 60 * 60
+    )
+    await database[PASSWORD_RESETS_COLLECTION].create_index([("token_hash", ASCENDING)], unique=True)
+    await database[PASSWORD_RESETS_COLLECTION].create_index(
+        [("expires_at", ASCENDING)], expireAfterSeconds=0
+    )
 
     await database[ITEMS_COLLECTION].create_index(
         [("user_id", ASCENDING), ("created_at", DESCENDING)]
@@ -28,6 +47,9 @@ async def create_indexes(database: AsyncIOMotorDatabase) -> None:
     )
     await database[ITEMS_COLLECTION].create_index(
         [("category", ASCENDING), ("date", DESCENDING)]
+    )
+    await database[ITEMS_COLLECTION].create_index(
+        [("status", ASCENDING), ("updated_at", ASCENDING)]
     )
     await database[ITEM_IMAGES_COLLECTION].create_index([("url", ASCENDING)], unique=True)
 
@@ -43,6 +65,10 @@ async def create_indexes(database: AsyncIOMotorDatabase) -> None:
     )
     await database[CLAIMS_COLLECTION].create_index(
         [("status", ASCENDING), ("created_at", DESCENDING)]
+    )
+
+    await database[CLAIM_MESSAGES_COLLECTION].create_index(
+        [("claim_id", ASCENDING), ("created_at", ASCENDING)]
     )
 
     await database[NOTIFICATIONS_COLLECTION].create_index(

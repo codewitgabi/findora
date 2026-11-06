@@ -10,14 +10,17 @@ from api.v1.dependencies.auth import get_current_user
 from api.v1.dependencies.pagination import PaginationDep
 from api.v1.models.item import ItemStatus, ReportType
 from api.v1.schemas.claim import ClaimCreate, ClaimCreatedOut
-from api.v1.schemas.item import ItemDetailOut, ItemSearchResult
+from api.v1.schemas.item import ItemCloseIn, ItemDetailOut, ItemSearchResult, ItemUpdateIn
 from api.v1.services.claims import create_claim
 from api.v1.services.items import (
     SearchFilters,
+    close_item,
     get_item_detail,
+    update_item,
     search_items,
     search_items_by_image,
 )
+from api.v1.utils.errors import field_validation_error
 from api.v1.utils.image_hash import compute_image_hash, read_image_upload
 from api.v1.utils.mongo import paginated
 
@@ -95,6 +98,38 @@ async def get_item(
     return success_response(
         "Item retrieved", data=ItemDetailOut(**item).model_dump(mode="json")
     )
+
+
+@router.patch("/{item_id}")
+async def edit_item(
+    item_id: str,
+    payload: ItemUpdateIn,
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+):
+    """Owner edits their own report. Material changes send an approved report back
+    for review."""
+    # exclude_unset keeps explicit nulls (e.g. removing a lost report's photo).
+    changes = payload.model_dump(mode="json", exclude_unset=True)
+    for field in ("item_name", "category", "color", "description", "location", "date"):
+        if field in changes and changes[field] is None:
+            raise field_validation_error(field, "This field can't be empty")
+    await update_item(db, user, item_id, changes)
+    item = await get_item_detail(db, item_id, user)
+    return success_response("Report updated", data=ItemDetailOut(**item).model_dump(mode="json"))
+
+
+@router.post("/{item_id}/close")
+async def close_my_item(
+    item_id: str,
+    payload: ItemCloseIn,
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+):
+    """Owner withdraws their report, e.g. because they found the item themselves."""
+    await close_item(db, user, item_id, payload.reason, payload.note)
+    item = await get_item_detail(db, item_id, user)
+    return success_response("Report closed", data=ItemDetailOut(**item).model_dump(mode="json"))
 
 
 @router.post("/{item_id}/claims", status_code=status.HTTP_201_CREATED)

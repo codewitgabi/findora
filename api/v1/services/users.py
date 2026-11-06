@@ -83,17 +83,69 @@ async def list_admin_users(
     return users, total
 
 
+async def update_user_access(
+    db: AsyncIOMotorDatabase,
+    admin: dict[str, Any],
+    user_id: str,
+    *,
+    new_status: Optional[AccountStatus] = None,
+    new_role: Optional[UserRole] = None,
+) -> dict[str, Any]:
+    if new_status is None and new_role is None:
+        raise field_validation_error("account_status", "Send account_status and/or role")
+    target = await _get_target(db, user_id)
+    if new_role is not None:
+        target = await _set_role(db, admin, target, new_role)
+    if new_status is not None:
+        target = await set_account_status(db, admin, user_id, new_status)
+    report_count = await db[ITEMS_COLLECTION].count_documents({"user_id": ObjectId(target["id"])})
+    return {**target, "report_count": report_count}
+
+
+async def _get_target(db: AsyncIOMotorDatabase, user_id: str) -> dict[str, Any]:
+    doc = await db[COLLECTION_NAME].find_one({"_id": to_object_id(user_id, resource="User")})
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return serialize(doc)
+
+
+async def _set_role(
+    db: AsyncIOMotorDatabase, admin: dict[str, Any], target: dict[str, Any], role: UserRole
+) -> dict[str, Any]:
+    if role == UserRole.ADMIN or target["role"] == UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator roles are managed with the create_admin script",
+        )
+    if target["role"] == role.value:
+        return target
+    await db[COLLECTION_NAME].update_one(
+        {"_id": ObjectId(target["id"])},
+        # New role takes effect on the next request; revoke tokens so stale UIs refresh.
+        {"$set": {"role": role.value}, "$inc": {"token_version": 1}},
+    )
+    await record_audit(
+        db,
+        admin,
+        action=(
+            f"Made {target['full_name']} a lost-property officer"
+            if role == UserRole.OFFICER
+            else f"Removed officer role from {target['full_name']}"
+        ),
+        target_type=AuditTargetType.USER,
+        target_id=target["id"],
+    )
+    return {**target, "role": role.value}
+
+
 async def set_account_status(
     db: AsyncIOMotorDatabase,
     admin: dict[str, Any],
     user_id: str,
     new_status: AccountStatus,
 ) -> dict[str, Any]:
-    doc = await db[COLLECTION_NAME].find_one({"_id": to_object_id(user_id, resource="User")})
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    target = serialize(doc)
+    target = await _get_target(db, user_id)
+    doc = {"_id": ObjectId(target["id"])}
     if target["role"] == UserRole.ADMIN.value and new_status == AccountStatus.SUSPENDED:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

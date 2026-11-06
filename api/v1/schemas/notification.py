@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -11,4 +12,6 @@ class NotificationOut(BaseModel):
     title: str
     message: str
     is_read: bool
+    item_id: Optional[str] = None
+    claim_id: Optional[str] = None
     created_at: datetime

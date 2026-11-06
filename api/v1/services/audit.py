@@ -15,6 +15,7 @@ async def record_audit(
     action: str,
     target_type: AuditTargetType,
     target_id: str,
+    details: Optional[str] = None,
 ) -> None:
     """Append an entry to the audit log. The log is append-only by design."""
     await db[COLLECTION_NAME].insert_one(
@@ -24,6 +25,7 @@ async def record_audit(
             "action": action,
             "target_type": target_type.value,
             "target_id": str(target_id),
+            "details": details,
             "created_at": datetime.now(timezone.utc),
         }
     )

@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from api.database import get_db
 from api.response import success_response
-from api.v1.dependencies.auth import require_admin
+from api.v1.dependencies.auth import require_admin, require_staff
 from api.v1.dependencies.pagination import PaginationDep
 from api.v1.models.audit_log import AuditTargetType
 from api.v1.models.claim import ClaimStatus
@@ -25,13 +25,16 @@ from api.v1.services.admin import change_report_status, get_stats, list_reports
 from api.v1.services.audit import list_audit_logs
 from api.v1.services.categories import create_category, delete_category
 from api.v1.services.claims import list_admin_claims, review_claim
-from api.v1.services.users import list_admin_users, set_account_status
+from api.v1.services.users import list_admin_users, update_user_access
 from api.v1.utils.mongo import paginated
 
-# Every route in this router requires an admin; enforced server-side via the dependency.
-router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin)])
+# Every route requires staff (admin or lost-property officer); user management,
+# categories and the audit log additionally require an admin. Enforced server-side.
+router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_staff)])
 
 Admin = Annotated[dict[str, Any], Depends(require_admin)]
+Staff = Annotated[dict[str, Any], Depends(require_staff)]
+AdminOnly = [Depends(require_admin)]
 Database = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
 
 
@@ -60,9 +63,11 @@ async def reports(
 
 @router.patch("/reports/{report_id}/status")
 async def update_report_status(
-    report_id: str, payload: ReportStatusIn, admin: Admin, db: Database
+    report_id: str, payload: ReportStatusIn, admin: Staff, db: Database
 ):
-    report = await change_report_status(db, admin, report_id, payload.status, payload.note)
+    report = await change_report_status(
+        db, admin, report_id, payload.status, payload.note, payload.duplicate_of
+    )
     return success_response(
         "Report status updated", data=AdminReportOut(**report).model_dump(mode="json")
     )
@@ -80,12 +85,12 @@ async def claims(
 
 
 @router.patch("/claims/{claim_id}")
-async def update_claim(claim_id: str, payload: ClaimReviewIn, admin: Admin, db: Database):
+async def update_claim(claim_id: str, payload: ClaimReviewIn, admin: Staff, db: Database):
     await review_claim(db, admin, claim_id, payload)
     return success_response("Claim updated")
 
 
-@router.get("/users")
+@router.get("/users", dependencies=AdminOnly)
 async def users(
     db: Database,
     pagination: PaginationDep,
@@ -104,7 +109,9 @@ async def users(
 
 @router.patch("/users/{user_id}")
 async def update_user(user_id: str, payload: AdminUserUpdateIn, admin: Admin, db: Database):
-    user = await set_account_status(db, admin, user_id, payload.account_status)
+    user = await update_user_access(
+        db, admin, user_id, new_status=payload.account_status, new_role=payload.role
+    )
     return success_response(
         "User updated", data=AdminUserOut(**user).model_dump(mode="json")
     )
@@ -126,7 +133,7 @@ async def remove_category(category_id: str, admin: Admin, db: Database):
     return success_response("Category deleted")
 
 
-@router.get("/audit-logs")
+@router.get("/audit-logs", dependencies=AdminOnly)
 async def audit_logs(
     db: Database,
     pagination: PaginationDep,

@@ -13,12 +13,28 @@ class ItemStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
     MATCHED = "matched"
+    # A claim was approved and the item is waiting to be collected. Not public.
+    CLAIMED = "claimed"
+    # Withdrawn by its reporter, or removed by an admin (inappropriate/duplicate). Final.
+    CLOSED = "closed"
     RESOLVED = "resolved"
     REJECTED = "rejected"
 
 
 # Statuses that are approved by an admin and not yet closed, i.e. publicly searchable.
 PUBLIC_STATUSES = (ItemStatus.ACTIVE.value, ItemStatus.MATCHED.value)
+
+
+# Statuses an owner may still edit or close, and an admin may close.
+OPEN_STATUSES = ("pending", "active", "matched")
+
+
+class CloseReason(StrEnum):
+    FOUND_IT = "found_it"
+    NO_LONGER_NEEDED = "no_longer_needed"
+    OTHER = "other"
+    REMOVED_BY_ADMIN = "removed_by_admin"
+    DUPLICATE = "duplicate"
 
 
 class ItemCondition(StrEnum):

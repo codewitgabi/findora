@@ -12,6 +12,9 @@ MATCH_THRESHOLD = 0.75
 # Minimum score for an item to be listed as similar or returned by photo search.
 MIN_SIMILAR_SCORE = 0.4
 MIN_SEARCH_SCORE = 0.3
+# Applied to item-to-item scores when either report has no photo, so a match made
+# on metadata alone needs near-perfect agreement to reach MATCH_THRESHOLD.
+NO_IMAGE_FACTOR = 0.85
 # Days apart after which a lost/found date pair stops contributing any agreement.
 _DATE_WINDOW_DAYS = 14
 
@@ -49,10 +52,15 @@ def _same(a: str, b: str) -> float:
 
 
 def item_pair_score(a: dict[str, Any], b: dict[str, Any]) -> float:
-    """Score how likely a lost report and a found report describe the same object."""
-    return hybrid_score(
+    """Score how likely a lost report and a found report describe the same object.
+
+    Reports without a photo are still matched on metadata, at a discount.
+    """
+    image = image_similarity(a.get("image_hash"), b.get("image_hash"))
+    factor = 1.0 if image is not None else NO_IMAGE_FACTOR
+    return factor * hybrid_score(
         {
-            "image": image_similarity(a.get("image_hash"), b.get("image_hash")),
+            "image": image,
             "category": _same(a["category"], b["category"]),
             "color": _same(a["color"], b["color"]),
             "location": location_agreement(a["location"], b["location"]),
@@ -70,7 +78,13 @@ def search_score(
     location: Optional[str] = None,
     anchor_date: Optional[str] = None,
 ) -> float:
-    """Score an item against a photo query plus whichever filters the user gave."""
+    """Score an item against a photo query plus whichever filters the user gave.
+
+    Items without a photo can't be visually similar, so photo search skips them
+    (they still show up in text search).
+    """
+    if not item.get("image_hash"):
+        return 0.0
     return hybrid_score(
         {
             "image": image_similarity(query_hash, item.get("image_hash")),

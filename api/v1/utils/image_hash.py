@@ -57,9 +57,9 @@ async def compute_image_hash(file_bytes: bytes) -> str:
     return await run_in_threadpool(_dhash, file_bytes)
 
 
-def image_similarity(hash_a: str | None, hash_b: str | None) -> float:
-    """Visual similarity in [0, 1]; 0 when either hash is missing."""
+def image_similarity(hash_a: str | None, hash_b: str | None) -> float | None:
+    """Visual similarity in [0, 1]; ``None`` when either side has no photo."""
     if not hash_a or not hash_b:
-        return 0.0
+        return None
     distance = (int(hash_a, 16) ^ int(hash_b, 16)).bit_count()
     return max(0.0, 1 - distance / _MAX_USEFUL_DISTANCE)

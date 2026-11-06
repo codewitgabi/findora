@@ -6,12 +6,21 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from api.database import get_db
 from api.response import success_response
 from api.v1.dependencies.auth import get_current_user
-from api.v1.schemas.auth import RefreshTokenIn, TokenOut, UserLoginIn
+from api.v1.schemas.auth import (
+    ForgotPasswordIn,
+    RefreshTokenIn,
+    ResetPasswordIn,
+    TokenOut,
+    UserLoginIn,
+)
 from api.v1.schemas.user import UserOut, UserRegisterIn
 from api.v1.services.auth import (
     authenticate_user,
     refresh_access_token,
     register_user,
+    request_password_reset,
+    reset_password,
+    revoke_tokens,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -46,6 +55,36 @@ async def refresh(
 ):
     tokens: TokenOut = await refresh_access_token(db, payload.refresh_token)
     return success_response("Token refreshed", data=tokens.model_dump())
+
+
+@router.post("/logout")
+async def logout(
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+):
+    """Sign out everywhere: every access and refresh token issued so far stops working."""
+    await revoke_tokens(db, user["id"])
+    return success_response("Logged out")
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    payload: ForgotPasswordIn,
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+):
+    await request_password_reset(db, payload.email)
+    return success_response(
+        "If an account exists for that email, a reset link is on its way"
+    )
+
+
+@router.post("/reset-password")
+async def reset_password_route(
+    payload: ResetPasswordIn,
+    db: Annotated[AsyncIOMotorDatabase, Depends(get_db)],
+):
+    await reset_password(db, payload.token, payload.new_password)
+    return success_response("Password updated. Sign in with your new password.")
 
 
 @router.get("/me")
